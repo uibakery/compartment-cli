@@ -6,6 +6,7 @@ distribution_repository="${PLATFORM_RELEASES_REPOSITORY:-uibakery/compartment-cl
 channel="latest"
 version=""
 bin_dir="${HOME}/.local/bin"
+main_release_tag_asset="main-release-tag.txt"
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -42,6 +43,27 @@ case "$channel" in
     ;;
 esac
 
+resolve_main_release_tag() {
+  main_release_tag_url="https://github.com/${distribution_repository}/releases/download/main/${main_release_tag_asset}"
+  resolved_release_tag="$(curl -fsSL "$main_release_tag_url" | tr -d '\r\n')"
+
+  if [ -z "$resolved_release_tag" ]; then
+    printf 'Missing main release tag pointer in %s\n' "$main_release_tag_url" >&2
+    exit 1
+  fi
+
+  case "$resolved_release_tag" in
+    sha-*)
+      printf 'Resolved main to %s\n' "$resolved_release_tag" >&2
+      printf '%s' "$resolved_release_tag"
+      ;;
+    *)
+      printf 'Invalid main release tag pointer: %s\n' "$resolved_release_tag" >&2
+      exit 1
+      ;;
+  esac
+}
+
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"
 
@@ -74,10 +96,22 @@ esac
 artifact_name="platform-${platform_os}-${platform_arch}.tar.gz"
 
 if [ -n "$version" ]; then
-  release_path="releases/download/v${version}"
+  case "$version" in
+    main)
+      resolved_release_tag="$(resolve_main_release_tag)"
+      release_path="releases/download/${resolved_release_tag}"
+      ;;
+    sha-*)
+      release_path="releases/download/${version}"
+      ;;
+    *)
+      release_path="releases/download/v${version}"
+      ;;
+  esac
 else
   if [ "$channel" = "main" ]; then
-    release_path="releases/download/main"
+    resolved_release_tag="$(resolve_main_release_tag)"
+    release_path="releases/download/${resolved_release_tag}"
   else
     release_path="releases/latest/download"
   fi
