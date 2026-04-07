@@ -156,3 +156,4 @@ install -m 0755 "${temp_directory}/platform" "${bin_dir}/platform"
 
 printf 'Installed platform to %s\n' "${bin_dir}/platform"
 "${bin_dir}/platform" --version
+printf 'If you are upgrading an existing on-prem install, run `platform update` from that install directory.\n'
