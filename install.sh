@@ -6,6 +6,7 @@ distribution_repository="${COMPARTMENT_RELEASES_REPOSITORY:-uibakery/compartment
 channel="latest"
 version=""
 bin_dir="${HOME}/.local/bin"
+init_install="0"
 main_release_tag_asset="main-release-tag.txt"
 
 while [ "$#" -gt 0 ]; do
@@ -21,6 +22,10 @@ while [ "$#" -gt 0 ]; do
     --bin-dir)
       bin_dir="$2"
       shift 2
+      ;;
+    --init-install)
+      init_install="1"
+      shift
       ;;
     *)
       printf 'Unknown installer argument: %s\n' "$1" >&2
@@ -62,6 +67,36 @@ resolve_main_release_tag() {
       exit 1
       ;;
   esac
+}
+
+has_existing_onprem_install() {
+  [ -f ".env.onprem" ]
+}
+
+can_use_installer_terminal() {
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    return 0
+  fi
+
+  if [ ! -t 1 ] || [ ! -t 2 ]; then
+    return 1
+  fi
+
+  (
+    exec </dev/tty >/dev/tty 2>/dev/tty
+  ) >/dev/null 2>&1
+}
+
+run_bootstrap_install() {
+  binary_path="$1"
+  printf 'No on-prem install detected in %s. Running `compartment install`.\n' "$(pwd)"
+
+  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
+    "$binary_path" install
+    return 0
+  fi
+
+  "$binary_path" install </dev/tty >/dev/tty 2>/dev/tty
 }
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -152,8 +187,26 @@ fi
 
 mkdir -p "$bin_dir"
 tar -xzf "$artifact_path" -C "$temp_directory"
-install -m 0755 "${temp_directory}/compartment" "${bin_dir}/compartment"
+install_path="${bin_dir}/compartment"
+install -m 0755 "${temp_directory}/compartment" "$install_path"
 
-printf 'Installed compartment to %s\n' "${bin_dir}/compartment"
-"${bin_dir}/compartment" --version
-printf 'If you are upgrading an existing on-prem install, run `compartment update` from that install directory.\n'
+printf 'Installed compartment to %s\n' "$install_path"
+"$install_path" --version
+
+if has_existing_onprem_install; then
+  printf 'Detected existing on-prem install in %s. Run `compartment update` from this directory if you are upgrading the runtime.\n' "$(pwd)"
+  exit 0
+fi
+
+if [ "$init_install" != "1" ]; then
+  printf 'Installed CLI only. Run `compartment install` from the target install directory when you are ready, or re-run this installer with `--init-install`.\n'
+  exit 0
+fi
+
+if can_use_installer_terminal; then
+  run_bootstrap_install "$install_path"
+  exit 0
+fi
+
+printf 'Requested `--init-install`, but no terminal is available. Run `compartment install` from the target install directory in an interactive shell.\n' >&2
+exit 1
