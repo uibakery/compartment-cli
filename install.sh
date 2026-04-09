@@ -194,7 +194,7 @@ printf 'Installed compartment to %s\n' "$install_path"
 "$install_path" --version
 
 if has_existing_onprem_install; then
-  printf 'Detected existing on-prem install in %s. Run `compartment update` from this directory if you are upgrading the runtime.\n' "$(pwd)"
+  printf 'Detected existing on-prem install in %s. Run `compartment system update` from this directory if you are upgrading the runtime.\n' "$(pwd)"
   exit 0
 fi
 
