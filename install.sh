@@ -2,7 +2,7 @@
 
 set -eu
 
-distribution_repository="${PLATFORM_RELEASES_REPOSITORY:-uibakery/compartment-cli}"
+distribution_repository="${COMPARTMENT_RELEASES_REPOSITORY:-uibakery/compartment-cli}"
 channel="latest"
 version=""
 bin_dir="${HOME}/.local/bin"
@@ -69,10 +69,10 @@ arch="$(uname -m)"
 
 case "$os" in
   darwin)
-    platform_os="darwin"
+    target_os="darwin"
     ;;
   linux)
-    platform_os="linux"
+    target_os="linux"
     ;;
   *)
     printf 'Unsupported operating system: %s\n' "$os" >&2
@@ -82,10 +82,10 @@ esac
 
 case "$arch" in
   x86_64|amd64)
-    platform_arch="x64"
+    target_arch="x64"
     ;;
   arm64|aarch64)
-    platform_arch="arm64"
+    target_arch="arm64"
     ;;
   *)
     printf 'Unsupported architecture: %s\n' "$arch" >&2
@@ -93,7 +93,7 @@ case "$arch" in
     ;;
 esac
 
-artifact_name="platform-${platform_os}-${platform_arch}.tar.gz"
+artifact_name="compartment-${target_os}-${target_arch}.tar.gz"
 
 if [ -n "$version" ]; then
   case "$version" in
@@ -152,8 +152,8 @@ fi
 
 mkdir -p "$bin_dir"
 tar -xzf "$artifact_path" -C "$temp_directory"
-install -m 0755 "${temp_directory}/platform" "${bin_dir}/platform"
+install -m 0755 "${temp_directory}/compartment" "${bin_dir}/compartment"
 
-printf 'Installed platform to %s\n' "${bin_dir}/platform"
-"${bin_dir}/platform" --version
-printf 'If you are upgrading an existing on-prem install, run `platform update` from that install directory.\n'
+printf 'Installed compartment to %s\n' "${bin_dir}/compartment"
+"${bin_dir}/compartment" --version
+printf 'If you are upgrading an existing on-prem install, run `compartment update` from that install directory.\n'
