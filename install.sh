@@ -5,7 +5,7 @@ set -eu
 distribution_repository="${COMPARTMENT_RELEASES_REPOSITORY:-uibakery/compartment-cli}"
 channel="latest"
 version=""
-bin_dir="${HOME}/.local/bin"
+bin_dir=""
 init_install="0"
 main_release_tag_asset="main-release-tag.txt"
 
@@ -69,10 +69,6 @@ resolve_main_release_tag() {
   esac
 }
 
-has_existing_onprem_install() {
-  [ -f ".env.onprem" ]
-}
-
 can_use_installer_terminal() {
   if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
     return 0
@@ -87,16 +83,181 @@ can_use_installer_terminal() {
   ) >/dev/null 2>&1
 }
 
-run_bootstrap_install() {
-  binary_path="$1"
-  printf 'No on-prem install detected in %s. Running `compartment install`.\n' "$(pwd)"
+run_init_install() {
+  init_install_path="$1"
 
-  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
-    "$binary_path" install
+  if ! can_use_installer_terminal; then
+    printf 'Requested `--init-install`, but no terminal is available for sudo and setup prompts. Run `sudo "%s" install` from an interactive shell.\n' "$init_install_path" >&2
+    exit 1
+  fi
+
+  printf 'Running `sudo "%s" install` for system on-prem setup.\n' "$init_install_path"
+  sudo "$init_install_path" install </dev/tty >/dev/tty 2>/dev/tty
+}
+
+is_directory_on_path() {
+  path_lookup_directory="$1"
+  path_lookup_old_ifs="$IFS"
+  IFS=:
+  for path_lookup_entry in ${PATH:-}; do
+    IFS="$path_lookup_old_ifs"
+    if [ "$path_lookup_entry" = "$path_lookup_directory" ]; then
+      return 0
+    fi
+    IFS=:
+  done
+  IFS="$path_lookup_old_ifs"
+
+  return 1
+}
+
+is_user_bin_candidate() {
+  user_bin_candidate_directory="$1"
+  [ "$user_bin_candidate_directory" = "${HOME}/.local/bin" ] || [ "$user_bin_candidate_directory" = "${HOME}/bin" ]
+}
+
+is_usable_user_bin_directory() {
+  usable_bin_candidate_directory="$1"
+  if [ ! -e "$usable_bin_candidate_directory" ]; then
     return 0
   fi
 
-  "$binary_path" install </dev/tty >/dev/tty 2>/dev/tty
+  if [ ! -d "$usable_bin_candidate_directory" ] || [ ! -w "$usable_bin_candidate_directory" ]; then
+    return 1
+  fi
+
+  if command -v find >/dev/null 2>&1; then
+    usable_bin_owner_match="$(find "$usable_bin_candidate_directory" -prune -user "$(id -u)" -print 2>/dev/null || true)"
+    [ -n "$usable_bin_owner_match" ]
+    return $?
+  fi
+
+  return 0
+}
+
+select_user_bin_directory() {
+  select_bin_old_ifs="$IFS"
+  IFS=:
+  for select_bin_path_entry in ${PATH:-}; do
+    IFS="$select_bin_old_ifs"
+    if is_user_bin_candidate "$select_bin_path_entry" && is_usable_user_bin_directory "$select_bin_path_entry"; then
+      printf '%s' "$select_bin_path_entry"
+      return 0
+    fi
+    IFS=:
+  done
+  IFS="$select_bin_old_ifs"
+
+  printf '%s' "${HOME}/.local/bin"
+}
+
+read_shell_name() {
+  shell_path="${SHELL:-}"
+  printf '%s' "${shell_path##*/}"
+}
+
+read_shell_profile_path() {
+  shell_name="$1"
+  case "$shell_name" in
+    zsh)
+      printf '%s' "${ZDOTDIR:-$HOME}/.zshrc"
+      ;;
+    bash)
+      printf '%s' "${HOME}/.bashrc"
+      ;;
+    fish)
+      printf '%s' "${HOME}/.config/fish/config.fish"
+      ;;
+    *)
+      printf ''
+      ;;
+  esac
+}
+
+build_path_update_command() {
+  path_command_shell_name="$1"
+  path_command_directory="$2"
+  case "$path_command_shell_name" in
+    fish)
+      printf 'fish_add_path "%s"' "$path_command_directory"
+      ;;
+    *)
+      printf 'export PATH="%s:$PATH"' "$path_command_directory"
+      ;;
+  esac
+}
+
+print_path_instruction() {
+  instruction_path_directory="$1"
+  instruction_shell_name="$2"
+  instruction_path_command="$(build_path_update_command "$instruction_shell_name" "$instruction_path_directory")"
+  printf '%s is not on PATH.\n' "$instruction_path_directory"
+  printf 'Add it to your shell profile, or run for this shell: %s\n' "$instruction_path_command"
+}
+
+should_update_shell_profile() {
+  prompt_path_directory="$1"
+  prompt_profile_path="$2"
+
+  if [ "${COMPARTMENT_INSTALLER_ACCEPT_PATH_UPDATE:-}" = "1" ]; then
+    return 0
+  fi
+
+  if ! can_use_installer_terminal; then
+    return 1
+  fi
+
+  printf '%s is not on PATH. Add it to %s? [Y/n] ' "$prompt_path_directory" "$prompt_profile_path" >/dev/tty
+  IFS= read -r answer </dev/tty || answer=""
+  case "$answer" in
+    ""|y|Y|yes|YES)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+append_path_update_if_missing() {
+  append_profile_path="$1"
+  append_path_command="$2"
+  append_profile_directory="$(dirname "$append_profile_path")"
+
+  mkdir -p "$append_profile_directory"
+  if [ -f "$append_profile_path" ] && grep -F "$append_path_command" "$append_profile_path" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  {
+    printf '\n'
+    printf '# Add Compartment CLI to PATH\n'
+    printf '%s\n' "$append_path_command"
+  } >> "$append_profile_path"
+}
+
+ensure_bin_directory_on_path() {
+  ensure_bin_directory="$1"
+  if is_directory_on_path "$ensure_bin_directory"; then
+    return 0
+  fi
+
+  ensure_shell_name="$(read_shell_name)"
+  ensure_profile_path="$(read_shell_profile_path "$ensure_shell_name")"
+  ensure_path_command="$(build_path_update_command "$ensure_shell_name" "$ensure_bin_directory")"
+
+  if [ -z "$ensure_profile_path" ]; then
+    print_path_instruction "$ensure_bin_directory" "$ensure_shell_name"
+    return 0
+  fi
+
+  if should_update_shell_profile "$ensure_bin_directory" "$ensure_profile_path"; then
+    append_path_update_if_missing "$ensure_profile_path" "$ensure_path_command"
+    printf 'Added %s to %s. Restart your shell or run: %s\n' "$ensure_bin_directory" "$ensure_profile_path" "$ensure_path_command"
+    return 0
+  fi
+
+  print_path_instruction "$ensure_bin_directory" "$ensure_shell_name"
 }
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -185,6 +346,10 @@ else
   exit 1
 fi
 
+if [ -z "$bin_dir" ]; then
+  bin_dir="$(select_user_bin_directory)"
+fi
+
 mkdir -p "$bin_dir"
 tar -xzf "$artifact_path" -C "$temp_directory"
 install_path="${bin_dir}/compartment"
@@ -192,21 +357,11 @@ install -m 0755 "${temp_directory}/compartment" "$install_path"
 
 printf 'Installed compartment to %s\n' "$install_path"
 "$install_path" --version
-
-if has_existing_onprem_install; then
-  printf 'Detected existing on-prem install in %s. Run `compartment system update` from this directory if you are upgrading the runtime.\n' "$(pwd)"
-  exit 0
-fi
+ensure_bin_directory_on_path "$bin_dir"
 
 if [ "$init_install" != "1" ]; then
-  printf 'Installed CLI only. Run `compartment install` from the target install directory when you are ready, or re-run this installer with `--init-install`.\n'
+  printf 'Installed CLI only. Run `sudo "%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
   exit 0
 fi
 
-if can_use_installer_terminal; then
-  run_bootstrap_install "$install_path"
-  exit 0
-fi
-
-printf 'Requested `--init-install`, but no terminal is available. Run `compartment install` from the target install directory in an interactive shell.\n' >&2
-exit 1
+run_init_install "$install_path"
