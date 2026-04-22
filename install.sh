@@ -7,6 +7,9 @@ channel="latest"
 version=""
 bin_dir=""
 init_install="0"
+init_login="0"
+login_api_url=""
+login_email=""
 main_release_tag_asset="main-release-tag.txt"
 
 while [ "$#" -gt 0 ]; do
@@ -27,6 +30,18 @@ while [ "$#" -gt 0 ]; do
       init_install="1"
       shift
       ;;
+    --init-login)
+      init_login="1"
+      shift
+      ;;
+    --api-url)
+      login_api_url="$2"
+      shift 2
+      ;;
+    --email)
+      login_email="$2"
+      shift 2
+      ;;
     *)
       printf 'Unknown installer argument: %s\n' "$1" >&2
       exit 1
@@ -37,6 +52,28 @@ done
 if [ -n "$version" ] && [ "$channel" != "latest" ]; then
   printf 'Choose either --version or --channel, not both.\n' >&2
   exit 1
+fi
+
+if [ "$init_install" = "1" ] && [ "$init_login" = "1" ]; then
+  printf 'Choose either --init-install or --init-login, not both.\n' >&2
+  exit 1
+fi
+
+if [ "$init_login" = "1" ]; then
+  if [ -z "$login_api_url" ]; then
+    printf 'Expected --api-url <url> with --init-login.\n' >&2
+    exit 1
+  fi
+
+  if [ -z "$login_email" ]; then
+    printf 'Expected --email <email> with --init-login.\n' >&2
+    exit 1
+  fi
+else
+  if [ -n "$login_api_url" ] || [ -n "$login_email" ]; then
+    printf 'Use --api-url and --email only with --init-login.\n' >&2
+    exit 1
+  fi
 fi
 
 case "$channel" in
@@ -91,6 +128,29 @@ write_installer_terminal_prompt() {
   printf '%s' "$prompt_text" >&2
 }
 
+quote_shell_argument() {
+  quote_value="$1"
+  case "$quote_value" in
+    *[!A-Za-z0-9_./:=@+-]*)
+      printf "'%s'" "$(printf '%s' "$quote_value" | sed "s/'/'\\\\''/g")"
+      ;;
+    *)
+      printf '%s' "$quote_value"
+      ;;
+  esac
+}
+
+format_init_login_command() {
+  format_login_path="$1"
+  format_login_api_url="$2"
+  format_login_email="$3"
+
+  printf '"%s" login --api-url %s --email %s' \
+    "$format_login_path" \
+    "$(quote_shell_argument "$format_login_api_url")" \
+    "$(quote_shell_argument "$format_login_email")"
+}
+
 run_init_install() {
   init_install_path="$1"
 
@@ -106,6 +166,26 @@ run_init_install() {
   fi
 
   "$init_install_path" install </dev/tty
+}
+
+run_init_login() {
+  init_login_path="$1"
+  init_login_api_url="$2"
+  init_login_email="$3"
+  init_login_command="$(format_init_login_command "$init_login_path" "$init_login_api_url" "$init_login_email")"
+
+  if ! can_use_installer_terminal; then
+    printf 'Requested `--init-login`, but no terminal is available for the password prompt. Run `%s` from an interactive shell.\n' "$init_login_command" >&2
+    exit 1
+  fi
+
+  printf 'Running `%s` for local CLI login.\n' "$init_login_command"
+  if can_write_installer_terminal; then
+    "$init_login_path" login --api-url "$init_login_api_url" --email "$init_login_email" </dev/tty >/dev/tty 2>/dev/tty
+    return 0
+  fi
+
+  "$init_login_path" login --api-url "$init_login_api_url" --email "$init_login_email" </dev/tty
 }
 
 is_directory_on_path() {
@@ -372,9 +452,14 @@ printf 'Installed compartment to %s\n' "$install_path"
 "$install_path" --version
 ensure_bin_directory_on_path "$bin_dir"
 
-if [ "$init_install" != "1" ]; then
-  printf 'Installed CLI only. Run `"%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
+if [ "$init_install" = "1" ]; then
+  run_init_install "$install_path"
   exit 0
 fi
 
-run_init_install "$install_path"
+if [ "$init_login" = "1" ]; then
+  run_init_login "$install_path" "$login_api_url" "$login_email"
+  exit 0
+fi
+
+printf 'Installed CLI only. Run `"%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
