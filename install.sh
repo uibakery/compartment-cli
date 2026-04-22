@@ -70,14 +70,6 @@ resolve_main_release_tag() {
 }
 
 can_use_installer_terminal() {
-  if [ -t 0 ] && [ -t 1 ] && [ -t 2 ]; then
-    return 0
-  fi
-
-  if [ ! -t 1 ] || [ ! -t 2 ]; then
-    return 1
-  fi
-
   (
     exec </dev/tty >/dev/tty 2>/dev/tty
   ) >/dev/null 2>&1
