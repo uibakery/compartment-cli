@@ -87,12 +87,12 @@ run_init_install() {
   init_install_path="$1"
 
   if ! can_use_installer_terminal; then
-    printf 'Requested `--init-install`, but no terminal is available for sudo and setup prompts. Run `sudo "%s" install` from an interactive shell.\n' "$init_install_path" >&2
+    printf 'Requested `--init-install`, but no terminal is available for sudo and setup prompts. Run `"%s" install` from an interactive shell.\n' "$init_install_path" >&2
     exit 1
   fi
 
-  printf 'Running `sudo "%s" install` for system on-prem setup.\n' "$init_install_path"
-  sudo "$init_install_path" install </dev/tty >/dev/tty 2>/dev/tty
+  printf 'Running `"%s" install` for system on-prem setup.\n' "$init_install_path"
+  "$init_install_path" install </dev/tty >/dev/tty 2>/dev/tty
 }
 
 is_directory_on_path() {
@@ -360,7 +360,7 @@ printf 'Installed compartment to %s\n' "$install_path"
 ensure_bin_directory_on_path "$bin_dir"
 
 if [ "$init_install" != "1" ]; then
-  printf 'Installed CLI only. Run `sudo "%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
+  printf 'Installed CLI only. Run `"%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
   exit 0
 fi
 
