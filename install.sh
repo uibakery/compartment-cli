@@ -71,8 +71,24 @@ resolve_main_release_tag() {
 
 can_use_installer_terminal() {
   (
-    exec </dev/tty >/dev/tty 2>/dev/tty
+    exec </dev/tty
   ) >/dev/null 2>&1
+}
+
+can_write_installer_terminal() {
+  (
+    exec >/dev/tty
+  ) >/dev/null 2>&1
+}
+
+write_installer_terminal_prompt() {
+  prompt_text="$1"
+  if can_write_installer_terminal; then
+    printf '%s' "$prompt_text" >/dev/tty
+    return 0
+  fi
+
+  printf '%s' "$prompt_text" >&2
 }
 
 run_init_install() {
@@ -84,7 +100,12 @@ run_init_install() {
   fi
 
   printf 'Running `"%s" install` for system on-prem setup.\n' "$init_install_path"
-  "$init_install_path" install </dev/tty >/dev/tty 2>/dev/tty
+  if can_write_installer_terminal; then
+    "$init_install_path" install </dev/tty >/dev/tty 2>/dev/tty
+    return 0
+  fi
+
+  "$init_install_path" install </dev/tty
 }
 
 is_directory_on_path() {
@@ -199,7 +220,7 @@ should_update_shell_profile() {
     return 1
   fi
 
-  printf '%s is not on PATH. Add it to %s? [Y/n] ' "$prompt_path_directory" "$prompt_profile_path" >/dev/tty
+  write_installer_terminal_prompt "${prompt_path_directory} is not on PATH. Add it to ${prompt_profile_path}? [Y/n] "
   IFS= read -r answer </dev/tty || answer=""
   case "$answer" in
     ""|y|Y|yes|YES)
