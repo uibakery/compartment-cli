@@ -251,12 +251,25 @@ read_shell_name() {
 
 read_shell_profile_path() {
   shell_name="$1"
+  if [ -n "${PROFILE:-}" ]; then
+    printf '%s' "$PROFILE"
+    return 0
+  fi
+
   case "$shell_name" in
     zsh)
-      printf '%s' "${ZDOTDIR:-$HOME}/.zshrc"
+      if [ "$os" = "darwin" ]; then
+        printf '%s' "${ZDOTDIR:-$HOME}/.zprofile"
+      else
+        printf '%s' "${ZDOTDIR:-$HOME}/.zshrc"
+      fi
       ;;
     bash)
-      printf '%s' "${HOME}/.bashrc"
+      if [ "$os" = "darwin" ]; then
+        printf '%s' "${HOME}/.bash_profile"
+      else
+        printf '%s' "${HOME}/.bashrc"
+      fi
       ;;
     fish)
       printf '%s' "${HOME}/.config/fish/config.fish"
@@ -283,8 +296,14 @@ build_path_update_command() {
 print_path_instruction() {
   instruction_path_directory="$1"
   instruction_shell_name="$2"
+  instruction_profile_path="$3"
   instruction_path_command="$(build_path_update_command "$instruction_shell_name" "$instruction_path_directory")"
   printf '%s is not on PATH.\n' "$instruction_path_directory"
+  if [ -n "$instruction_profile_path" ]; then
+    printf 'Add it to %s, or run for this shell: %s\n' "$instruction_profile_path" "$instruction_path_command"
+    return 0
+  fi
+
   printf 'Add it to your shell profile, or run for this shell: %s\n' "$instruction_path_command"
 }
 
@@ -340,7 +359,7 @@ ensure_bin_directory_on_path() {
   ensure_path_command="$(build_path_update_command "$ensure_shell_name" "$ensure_bin_directory")"
 
   if [ -z "$ensure_profile_path" ]; then
-    print_path_instruction "$ensure_bin_directory" "$ensure_shell_name"
+    print_path_instruction "$ensure_bin_directory" "$ensure_shell_name" ''
     return 0
   fi
 
@@ -350,7 +369,7 @@ ensure_bin_directory_on_path() {
     return 0
   fi
 
-  print_path_instruction "$ensure_bin_directory" "$ensure_shell_name"
+  print_path_instruction "$ensure_bin_directory" "$ensure_shell_name" "$ensure_profile_path"
 }
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
