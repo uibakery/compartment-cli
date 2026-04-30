@@ -7,6 +7,7 @@ channel="latest"
 version=""
 bin_dir=""
 init_install="0"
+init_update="0"
 init_login="0"
 login_api_url=""
 login_email=""
@@ -28,6 +29,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --init-install)
       init_install="1"
+      shift
+      ;;
+    --init-update)
+      init_update="1"
       shift
       ;;
     --init-login)
@@ -54,8 +59,19 @@ if [ -n "$version" ] && [ "$channel" != "latest" ]; then
   exit 1
 fi
 
-if [ "$init_install" = "1" ] && [ "$init_login" = "1" ]; then
-  printf 'Choose either --init-install or --init-login, not both.\n' >&2
+init_mode_count=0
+if [ "$init_install" = "1" ]; then
+  init_mode_count=$((init_mode_count + 1))
+fi
+if [ "$init_update" = "1" ]; then
+  init_mode_count=$((init_mode_count + 1))
+fi
+if [ "$init_login" = "1" ]; then
+  init_mode_count=$((init_mode_count + 1))
+fi
+
+if [ "$init_mode_count" -gt 1 ]; then
+  printf 'Choose at most one of --init-install, --init-update, or --init-login.\n' >&2
   exit 1
 fi
 
@@ -166,6 +182,30 @@ run_init_install() {
   fi
 
   "$init_install_path" install </dev/tty
+}
+
+format_init_update_command() {
+  format_update_path="$1"
+
+  printf '"%s" system update' "$format_update_path"
+}
+
+run_init_update() {
+  init_update_path="$1"
+  init_update_command="$(format_init_update_command "$init_update_path")"
+
+  if ! can_use_installer_terminal; then
+    printf 'Requested `--init-update`, but no terminal is available for sudo and update prompts. Run `%s` from an interactive shell.\n' "$init_update_command" >&2
+    exit 1
+  fi
+
+  printf 'Running `%s` for system on-prem update.\n' "$init_update_command"
+  if can_write_installer_terminal; then
+    "$init_update_path" system update </dev/tty >/dev/tty 2>/dev/tty
+    return 0
+  fi
+
+  "$init_update_path" system update </dev/tty
 }
 
 run_init_login() {
@@ -476,9 +516,14 @@ if [ "$init_install" = "1" ]; then
   exit 0
 fi
 
+if [ "$init_update" = "1" ]; then
+  run_init_update "$install_path"
+  exit 0
+fi
+
 if [ "$init_login" = "1" ]; then
   run_init_login "$install_path" "$login_api_url" "$login_email"
   exit 0
 fi
 
-printf 'Installed CLI only. Run `"%s" install` when you are ready, or re-run this installer with `--init-install`.\n' "$install_path"
+printf 'Installed CLI only. Run `"%s" install` when you are ready, run `sudo "%s" system update` for an existing runtime, or re-run this installer with `--init-install` or `--init-update`.\n' "$install_path" "$install_path"
