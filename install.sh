@@ -11,6 +11,8 @@ init_update="0"
 init_login="0"
 login_api_url=""
 login_email=""
+login_organization=""
+login_onboarding_session=""
 main_release_tag_asset="main-release-tag.txt"
 
 while [ "$#" -gt 0 ]; do
@@ -45,6 +47,14 @@ while [ "$#" -gt 0 ]; do
       ;;
     --email)
       login_email="$2"
+      shift 2
+      ;;
+    --organization)
+      login_organization="$2"
+      shift 2
+      ;;
+    --onboarding-session)
+      login_onboarding_session="$2"
       shift 2
       ;;
     *)
@@ -86,8 +96,8 @@ if [ "$init_login" = "1" ]; then
     exit 1
   fi
 else
-  if [ -n "$login_api_url" ] || [ -n "$login_email" ]; then
-    printf 'Use --api-url and --email only with --init-login.\n' >&2
+  if [ -n "$login_api_url" ] || [ -n "$login_email" ] || [ -n "$login_organization" ] || [ -n "$login_onboarding_session" ]; then
+    printf 'Use --api-url, --email, --organization, and --onboarding-session only with --init-login.\n' >&2
     exit 1
   fi
 fi
@@ -160,11 +170,23 @@ format_init_login_command() {
   format_login_path="$1"
   format_login_api_url="$2"
   format_login_email="$3"
+  format_login_organization="$4"
+  format_login_onboarding_session="$5"
 
-  printf '"%s" login --api-url %s --email %s' \
+  format_login_command="$(printf '"%s" login --api-url %s --email %s' \
     "$format_login_path" \
     "$(quote_shell_argument "$format_login_api_url")" \
-    "$(quote_shell_argument "$format_login_email")"
+    "$(quote_shell_argument "$format_login_email")")"
+
+  if [ -n "$format_login_organization" ]; then
+    format_login_command="${format_login_command} --organization $(quote_shell_argument "$format_login_organization")"
+  fi
+
+  if [ -n "$format_login_onboarding_session" ]; then
+    format_login_command="${format_login_command} --onboarding-session $(quote_shell_argument "$format_login_onboarding_session")"
+  fi
+
+  printf '%s' "$format_login_command"
 }
 
 run_init_install() {
@@ -212,20 +234,30 @@ run_init_login() {
   init_login_path="$1"
   init_login_api_url="$2"
   init_login_email="$3"
-  init_login_command="$(format_init_login_command "$init_login_path" "$init_login_api_url" "$init_login_email")"
+  init_login_organization="$4"
+  init_login_onboarding_session="$5"
+  init_login_command="$(format_init_login_command "$init_login_path" "$init_login_api_url" "$init_login_email" "$init_login_organization" "$init_login_onboarding_session")"
 
   if ! can_use_installer_terminal; then
     printf 'Requested `--init-login`, but no terminal is available for the password prompt. Run `%s` from an interactive shell.\n' "$init_login_command" >&2
     exit 1
   fi
 
+  set -- login --api-url "$init_login_api_url" --email "$init_login_email"
+  if [ -n "$init_login_organization" ]; then
+    set -- "$@" --organization "$init_login_organization"
+  fi
+  if [ -n "$init_login_onboarding_session" ]; then
+    set -- "$@" --onboarding-session "$init_login_onboarding_session"
+  fi
+
   printf 'Running `%s` for local CLI login.\n' "$init_login_command"
   if can_write_installer_terminal; then
-    "$init_login_path" login --api-url "$init_login_api_url" --email "$init_login_email" </dev/tty >/dev/tty 2>/dev/tty
+    "$init_login_path" "$@" </dev/tty >/dev/tty 2>/dev/tty
     return 0
   fi
 
-  "$init_login_path" login --api-url "$init_login_api_url" --email "$init_login_email" </dev/tty
+  "$init_login_path" "$@" </dev/tty
 }
 
 is_directory_on_path() {
@@ -522,7 +554,7 @@ if [ "$init_update" = "1" ]; then
 fi
 
 if [ "$init_login" = "1" ]; then
-  run_init_login "$install_path" "$login_api_url" "$login_email"
+  run_init_login "$install_path" "$login_api_url" "$login_email" "$login_organization" "$login_onboarding_session"
   exit 0
 fi
 
